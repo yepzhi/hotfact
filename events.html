@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Calendario - Yepzhi</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <style>
+        body { margin: 0; padding: 0; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Configuración Firebase
+        const firebaseConfig = {
+          apiKey: "AIzaSyA83jSnPAzv0WfSzJ3yE49lwfX3U7QpCys",
+          authDomain: "yepzhi-calendar.firebaseapp.com",
+          projectId: "yepzhi-calendar",
+          storageBucket: "yepzhi-calendar.firebasestorage.app",
+          messagingSenderId: "316912093335",
+          appId: "1:316912093335:web:b4f24c6e857c6bad7101d2"
+        };
+
+        // Inicializar Firebase
+        if (!firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
+        // Iconos SVG
+        const ChevronLeft = () => (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+        );
+
+        const ChevronRight = () => (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        );
+
+        const Plus = () => (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/>
+          </svg>
+        );
+
+        const X = ({ className }) => (
+          <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        );
+
+        const Calendar = () => (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+        );
+
+        const Clock = () => (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        );
+
+        function EventCalendar() {
+          const [currentDate, setCurrentDate] = useState(new Date());
+          const [events, setEvents] = useState([]);
+          const [showModal, setShowModal] = useState(false);
+          const [loading, setLoading] = useState(true);
+          const [newEvent, setNewEvent] = useState({
+            title: '',
+            date: '',
+            allDay: true,
+            startTime: '09:00',
+            endTime: '17:00'
+          });
+
+          const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+          
+          const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+          // Cargar eventos de Firebase en tiempo real
+          useEffect(() => {
+            const unsubscribe = db.collection('events').onSnapshot((snapshot) => {
+              const eventsData = [];
+              snapshot.forEach((doc) => {
+                eventsData.push({ id: doc.id, ...doc.data() });
+              });
+              setEvents(eventsData);
+              setLoading(false);
+            }, (error) => {
+              console.error('Error al cargar eventos:', error);
+              setLoading(false);
+            });
+
+            return () => unsubscribe();
+          }, []);
+
+          const getDaysInMonth = (date) => {
+            const year = date.getFullYear();
+            const month = date.getMonth();
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            const daysInMonth = lastDay.getDate();
+            const startingDayOfWeek = firstDay.getDay();
+            
+            return { daysInMonth, startingDayOfWeek };
+          };
+
+          const changeMonth = (direction) => {
+            setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + direction, 1));
+          };
+
+          const getEventsForDate = (day) => {
+            const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            return events.filter(e => e.date === dateStr);
+          };
+
+          const handleAddEvent = async () => {
+            if (newEvent.title && newEvent.date) {
+              try {
+                await db.collection('events').add({
+                  title: newEvent.title,
+                  date: newEvent.date,
+                  allDay: newEvent.allDay,
+                  startTime: newEvent.startTime,
+                  endTime: newEvent.endTime,
+                  createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                setNewEvent({ title: '', date: '', allDay: true, startTime: '09:00', endTime: '17:00' });
+                setShowModal(false);
+              } catch (error) {
+                console.error('Error al agregar evento:', error);
+                alert('Error al guardar el evento. Intenta de nuevo.');
+              }
+            }
+          };
+
+          const handleDeleteEvent = async (id) => {
+            try {
+              await db.collection('events').doc(id).delete();
+            } catch (error) {
+              console.error('Error al eliminar evento:', error);
+              alert('Error al eliminar el evento. Intenta de nuevo.');
+            }
+          };
+
+          const getUpcomingEvents = () => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            return events
+              .filter(e => new Date(e.date) >= today)
+              .sort((a, b) => new Date(a.date) - new Date(b.date));
+          };
+
+          const formatDate = (dateStr) => {
+            const date = new Date(dateStr + 'T00:00:00');
+            const day = date.getDate();
+            const month = monthNames[date.getMonth()];
+            return `${day} ${month}`;
+          };
+
+          const { daysInMonth, startingDayOfWeek } = getDaysInMonth(currentDate);
+          const calendarDays = [];
+          
+          for (let i = 0; i < startingDayOfWeek; i++) {
+            calendarDays.push(null);
+          }
+          
+          for (let day = 1; day <= daysInMonth; day++) {
+            calendarDays.push(day);
+          }
+
+          const isToday = (day) => {
+            const today = new Date();
+            return day === today.getDate() && 
+                   currentDate.getMonth() === today.getMonth() && 
+                   currentDate.getFullYear() === today.getFullYear();
+          };
+
+          if (loading) {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+                <div className="text-white text-2xl">Cargando calendario...</div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4 md:p-8">
+              <div className="max-w-7xl mx-auto">
+                <div className="mb-8 text-center">
+                  <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">
+                    Mi Calendario
+                  </h1>
+                  <p className="text-purple-300">Gestiona tus eventos y compromisos</p>
+                  <p className="text-purple-400 text-sm mt-2">🔄 Sincronizado en la nube</p>
+                </div>
+
+                <div className="backdrop-blur-md bg-white/10 rounded-3xl p-6 md:p-8 border border-white/20 shadow-2xl mb-8">
+                  <div className="flex items-center justify-between mb-6">
+                    <button
+                      onClick={() => changeMonth(-1)}
+                      className="p-2 hover:bg-white/10 rounded-full transition-all text-white"
+                    >
+                      <ChevronLeft />
+                    </button>
+                    
+                    <h2 className="text-2xl md:text-3xl font-bold text-white">
+                      {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+                    </h2>
+                    
+                    <button
+                      onClick={() => changeMonth(1)}
+                      className="p-2 hover:bg-white/10 rounded-full transition-all text-white"
+                    >
+                      <ChevronRight />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-2 mb-2">
+                    {dayNames.map(day => (
+                      <div key={day} className="text-center text-purple-300 font-semibold text-sm">
+                        {day}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-2">
+                    {calendarDays.map((day, index) => {
+                      const hasEvents = day && getEventsForDate(day).length > 0;
+                      return (
+                        <div
+                          key={index}
+                          style={{ aspectRatio: '1' }}
+                          className={`rounded-lg p-2 ${
+                            day ? 'hover:bg-white/10 cursor-pointer transition-all' : ''
+                          } ${hasEvents ? 'bg-yellow-400/20' : day ? 'bg-white/5' : ''} ${
+                            isToday(day) ? 'ring-2 ring-purple-400' : ''
+                          }`}
+                        >
+                          {day && (
+                            <>
+                              <div className={`text-sm font-semibold mb-1 ${
+                                isToday(day) ? 'text-purple-400' : 'text-white'
+                              }`}>
+                                {day}
+                              </div>
+                              <div className="space-y-1">
+                                {getEventsForDate(day).slice(0, 2).map(event => (
+                                  <div
+                                    key={event.id}
+                                    className="text-xs bg-purple-500/50 rounded px-1 py-0.5 truncate"
+                                    title={event.title}
+                                  >
+                                    {event.title}
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => setShowModal(true)}
+                    className="mt-6 w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg hover:scale-105 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Plus />
+                    Agregar Evento
+                  </button>
+                </div>
+
+                <div className="backdrop-blur-md bg-white/10 rounded-3xl p-6 md:p-8 border border-white/20 shadow-2xl">
+                  <h3 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+                    <Calendar />
+                    Próximos Eventos
+                  </h3>
+                  
+                  {getUpcomingEvents().length === 0 ? (
+                    <p className="text-purple-300 text-center py-8">No hay eventos próximos</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {getUpcomingEvents().map(event => (
+                        <div
+                          key={event.id}
+                          className="bg-white/5 rounded-xl p-4 hover:bg-white/10 transition-all flex items-center justify-between"
+                        >
+                          <div className="flex-1">
+                            <h4 className="text-white font-semibold text-lg">{event.title}</h4>
+                            <div className="flex items-center gap-4 mt-1">
+                              <span className="text-purple-300 text-sm">
+                                📅 {formatDate(event.date)}
+                              </span>
+                              {!event.allDay && (
+                                <span className="text-purple-300 text-sm flex items-center gap-1">
+                                  <Clock />
+                                  {event.startTime} - {event.endTime}
+                                </span>
+                              )}
+                              {event.allDay && (
+                                <span className="text-purple-300 text-sm">Todo el día</span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteEvent(event.id)}
+                            className="p-2 hover:bg-red-500/20 rounded-full transition-all"
+                          >
+                            <X className="w-5 h-5 text-red-400" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {showModal && (
+                  <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="backdrop-blur-md bg-white/10 rounded-3xl p-6 md:p-8 border border-white/20 max-w-md w-full">
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-2xl font-bold text-white">Nuevo Evento</h3>
+                        <button
+                          onClick={() => setShowModal(false)}
+                          className="p-2 hover:bg-white/10 rounded-full transition-all"
+                        >
+                          <X className="w-6 h-6 text-white" />
+                        </button>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-white text-sm font-semibold mb-2 block">
+                            Evento
+                          </label>
+                          <input
+                            type="text"
+                            value={newEvent.title}
+                            onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                            placeholder="Ej: Renta de equipo de música"
+                            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-white text-sm font-semibold mb-2 block">
+                            Fecha
+                          </label>
+                          <input
+                            type="date"
+                            value={newEvent.date}
+                            onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
+                            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => setNewEvent({ ...newEvent, allDay: true })}
+                            className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
+                              newEvent.allDay
+                                ? 'bg-purple-500 text-white'
+                                : 'bg-white/10 text-purple-300 border border-white/20'
+                            }`}
+                          >
+                            Todo el día
+                          </button>
+                          <button
+                            onClick={() => setNewEvent({ ...newEvent, allDay: false })}
+                            className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
+                              !newEvent.allDay
+                                ? 'bg-purple-500 text-white'
+                                : 'bg-white/10 text-purple-300 border border-white/20'
+                            }`}
+                          >
+                            Horas específicas
+                          </button>
+                        </div>
+
+                        {!newEvent.allDay && (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-white text-sm font-semibold mb-2 block">
+                                Hora inicio
+                              </label>
+                              <input
+                                type="time"
+                                value={newEvent.startTime}
+                                onChange={(e) => setNewEvent({ ...newEvent, startTime: e.target.value })}
+                                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-white text-sm font-semibold mb-2 block">
+                                Hora fin
+                              </label>
+                              <input
+                                type="time"
+                                value={newEvent.endTime}
+                                onChange={(e) => setNewEvent({ ...newEvent, endTime: e.target.value })}
+                                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={handleAddEvent}
+                          className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg hover:scale-105 transition-all"
+                        >
+                          Guardar Evento
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<EventCalendar />);
+    </script>
+        <!-- Default Statcounter code for yepzhiweb
+https://yepzhi.com/ -->
+<script type="text/javascript">
+var sc_project=13182229; 
+var sc_invisible=0; 
+var sc_security="0cd44f01"; 
+var scJsHost = "https://";
+document.write("<sc"+"ript type='text/javascript' src='" +
+scJsHost+
+"statcounter.com/counter/counter.js'></"+"script>");
+</script>
+<noscript><div class="statcounter"><a title="Web Analytics"
+href="https://statcounter.com/" target="_blank"><img
+class="statcounter"
+src="https://c.statcounter.com/13182229/0/0cd44f01/0/"
+alt="Web Analytics"
+referrerPolicy="no-referrer-when-downgrade"></a></div></noscript>
+<!-- End of Statcounter Code -->
+</body>
+</html>
